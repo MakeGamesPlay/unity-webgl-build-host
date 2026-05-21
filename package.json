@@ -1,0 +1,10 @@
+{
+  "name": "com.makegamesplay.webbuildhost",
+  "version": "1.0.0",
+  "displayName": "WebGL Build Host",
+  "description": "Host a Unity Web (WebGL/WebGPU) build locally with the right Content-Encoding / wasm / COOP+COEP headers, an optional self-signed HTTPS LAN URL and a Cloudflare quick-tunnel for phone testing, plus a live per-device console that streams each connected browser's logs back into the editor. Dependency-free: a tiny native server, no Python or Node required.",
+  "unity": "2022.3",
+  "keywords": [ "webgl", "web", "webgpu", "host", "server", "https", "console", "logging", "testing", "mobile" ],
+  "author": { "name": "MakeGamesPlay" },
+  "license": "MIT"
+}

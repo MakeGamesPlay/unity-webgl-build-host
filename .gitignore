@@ -1,0 +1,18 @@
+# OS / editor cruft
+.DS_Store
+._*
+Thumbs.db
+desktop.ini
+*.swp
+
+# IDEs
+.idea/
+.vs/
+.vscode/
+
+# Go test artifacts (the shipped servers in Editor/HostBuild/Bin~/ ARE committed)
+Editor/HostBuild/Server~/*.test
+Editor/HostBuild/Server~/*.test.exe
+
+# NOTE: do NOT add a "*~" rule here — it would match the Bin~/ and Server~/ folders.
+# NOTE: Unity .meta files are intentionally committed (required for UPM packages).
