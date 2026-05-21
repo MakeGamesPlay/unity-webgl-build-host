@@ -107,6 +107,7 @@ namespace MakeGamesPlay.WebBuildHost.Editor
         Button startButton, stopButton;
         Label stateValue;
         HelpBox portRebindHelp, notRespondingHelp;
+        VisualElement cloudflaredHelp;
         VisualElement shareRow, qrCard, qrInner, detailsCol;
         UrlRow localRow, lanRow, publicRow;
         Label scanTitle, scanHint;
@@ -250,7 +251,7 @@ namespace MakeGamesPlay.WebBuildHost.Editor
             portSpacer.style.flexGrow = 1;
             portRow.Add(portSpacer);
             tunnelToggle = new Toggle("Expose via Cloudflare tunnel") { value = useTunnel };
-            tunnelToggle.RegisterValueChangedCallback(e => useTunnel = e.newValue);
+            tunnelToggle.RegisterValueChangedCallback(e => { useTunnel = e.newValue; UpdateUI(); });
             portRow.Add(tunnelToggle);
             configContainer.Add(portRow);
 
@@ -266,6 +267,30 @@ namespace MakeGamesPlay.WebBuildHost.Editor
             configContainer.Add(lanRowCfg);
 
             configCard.Add(configContainer);
+
+            // Inline help: if the tunnel is enabled but cloudflared is missing, explain
+            // what it's for and offer the install command + download link, so the user
+            // doesn't have to start the server to find out it's needed.
+            cloudflaredHelp = new VisualElement();
+            cloudflaredHelp.style.display = DisplayStyle.None;
+            cloudflaredHelp.style.marginTop = 2;
+            cloudflaredHelp.Add(new HelpBox(
+                "The public link needs cloudflared, which isn't installed. The build still " +
+                "works on localhost and your local network without it.", HelpBoxMessageType.Info));
+            var cfBtns = Row();
+            cfBtns.style.marginTop = 2;
+            cfBtns.Add(new Button(() =>
+            {
+                var cmd = CloudflaredInstallCommand();
+                EditorGUIUtility.systemCopyBuffer = cmd;
+                AppendOutput("[host] Copied to clipboard: " + cmd);
+            }) { text = "Copy install command" });
+            cfBtns.Add(new Button(() => Application.OpenURL("https://github.com/cloudflare/cloudflared/releases"))
+                { text = "Download page" });
+            cfBtns.Add(new Button(() => { cloudflaredAvailable = ProbeCloudflared(); UpdateUI(); })
+                { text = "Re-check" });
+            cloudflaredHelp.Add(cfBtns);
+            configCard.Add(cloudflaredHelp);
 
             var btnRow = Row();
             btnRow.style.marginTop = 4;
@@ -544,6 +569,12 @@ namespace MakeGamesPlay.WebBuildHost.Editor
             if (tunnelToggle.value != useTunnel) tunnelToggle.SetValueWithoutNotify(useTunnel);
             if (lanToggle.value != useLan) lanToggle.SetValueWithoutNotify(useLan);
             if (autoScrollToggle.value != autoScroll) autoScrollToggle.SetValueWithoutNotify(autoScroll);
+
+            // Probe cloudflared once (lazily) when the tunnel is on, then show install
+            // help while it's missing. The Re-check button re-probes after installing.
+            if (useTunnel && cloudflaredAvailable == null) cloudflaredAvailable = ProbeCloudflared();
+            cloudflaredHelp.style.display =
+                (useTunnel && cloudflaredAvailable == false) ? DisplayStyle.Flex : DisplayStyle.None;
 
             stateValue.text = StateText();
 
@@ -1220,6 +1251,18 @@ namespace MakeGamesPlay.WebBuildHost.Editor
                 if (ProbeExecutable(c, "--version")) return true;
             }
             return false;
+        }
+
+        // Platform-appropriate one-liner to install cloudflared, copied to the clipboard
+        // from the inline help. The Download page button covers every other case.
+        static string CloudflaredInstallCommand()
+        {
+            switch (Application.platform)
+            {
+                case RuntimePlatform.WindowsEditor: return "winget install --id Cloudflare.cloudflared";
+                case RuntimePlatform.OSXEditor:     return "brew install cloudflared";
+                default:                            return "sudo apt-get install cloudflared";
+            }
         }
     }
 }
