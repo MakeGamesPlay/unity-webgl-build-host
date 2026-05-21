@@ -9,9 +9,9 @@
 *.sh   text eol=lf
 *.ps1  text eol=crlf
 
-# Prebuilt native servers and compressed sample data are binary.
-Editor/HostBuild/Bin~/** binary
-*.wasm binary
-*.br   binary
-*.gz   binary
-*.data binary
+# Prebuilt native servers (shipped as compressed .gz.bytes assets) and sample data are binary.
+*.bytes binary
+*.wasm  binary
+*.br    binary
+*.gz    binary
+*.data  binary

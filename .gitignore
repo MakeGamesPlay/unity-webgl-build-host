@@ -10,9 +10,9 @@ desktop.ini
 .vs/
 .vscode/
 
-# Go test artifacts (the shipped servers in Editor/HostBuild/Bin~/ ARE committed)
+# Go test artifacts (the shipped servers in Editor/HostBuild/Bin/ ARE committed)
 Editor/HostBuild/Server~/*.test
 Editor/HostBuild/Server~/*.test.exe
 
-# NOTE: do NOT add a "*~" rule here — it would match the Bin~/ and Server~/ folders.
+# NOTE: do NOT add a "*~" rule here — it would match the Server~/ source folder.
 # NOTE: Unity .meta files are intentionally committed (required for UPM packages).

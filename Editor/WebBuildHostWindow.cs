@@ -959,7 +959,7 @@ namespace MakeGamesPlay.WebBuildHost.Editor
                 EditorUtility.DisplayDialog("No build folder", "Pick a Unity WebGL build folder first.", "OK");
                 return;
             }
-            var binPath = ResolveServerBinaryPath(out string expected);
+            var binPath = EnsureServerBinary(out string expected);
             if (binPath == null)
             {
                 EditorUtility.DisplayDialog("Server binary missing",
@@ -993,8 +993,6 @@ namespace MakeGamesPlay.WebBuildHost.Editor
             try { if (File.Exists(statusPath)) File.Delete(statusPath); } catch { }
             try { if (File.Exists(logPath)) File.Delete(logPath); } catch { }
             serveLogTail = "";
-
-            EnsureExecutable(binPath);
 
             var args = "--root \"" + buildFolder + "\"" +
                        " --port " + boundPort +
@@ -1124,22 +1122,85 @@ namespace MakeGamesPlay.WebBuildHost.Editor
 
         // ─── Server binary discovery ───────────────────────────────
 
-        string ResolveServerBinaryPath(out string expectedPath)
+        // Locate the platform's compressed server asset, decompress it into a
+        // per-project Library cache (keyed by content hash so updates re-extract),
+        // and return the runnable path. Shipping the binaries as ".gz.bytes"
+        // TextAssets is what gets them into a .unitypackage / Asset Store import;
+        // a tilde "Bin~" folder is stripped from those exports.
+        string EnsureServerBinary(out string expectedPath)
         {
-            string file = ServerBinaryFileName();
+            string stem = ServerBinaryStem();              // web-host-<os>-<arch>
+            string assetName = stem + ".gz.bytes";
             string editorDir = PackageEditorDir();
-            string full = string.IsNullOrEmpty(editorDir) ? null : Path.Combine(editorDir, "HostBuild", "Bin~", file);
-            expectedPath = full ?? ("<package>/Editor/HostBuild/Bin~/" + file);
-            if (full != null && File.Exists(full)) return Path.GetFullPath(full);
+            string gzPath = string.IsNullOrEmpty(editorDir)
+                ? null : Path.Combine(editorDir, "HostBuild", "Bin", assetName);
+            expectedPath = "<package>/Editor/HostBuild/Bin/" + assetName;
 
-            // Fallback: search the project (handles a relocated package).
+            if (gzPath == null || !File.Exists(gzPath))
+            {
+                // Fallback: search the project (handles a relocated package under Assets/).
+                try
+                {
+                    var hits = Directory.GetFiles(Application.dataPath, assetName, SearchOption.AllDirectories);
+                    gzPath = hits.Length > 0 ? hits[0] : null;
+                }
+                catch { gzPath = null; }
+            }
+            if (gzPath == null || !File.Exists(gzPath)) return null;
+
             try
             {
-                var hits = Directory.GetFiles(Application.dataPath, file, SearchOption.AllDirectories);
-                if (hits.Length > 0) return Path.GetFullPath(hits[0]);
+                byte[] compressed = File.ReadAllBytes(gzPath);
+                string exePath = Path.Combine(
+                    ProjectLibraryDir(), "com.makegamesplay.webbuildhost",
+                    ShortHash(compressed), stem + ServerBinaryExt());
+                expectedPath = exePath;
+
+                if (!File.Exists(exePath))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(exePath));
+                    byte[] raw = GunzipBytes(compressed);
+                    string tmp = exePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                    File.WriteAllBytes(tmp, raw);
+                    try { if (File.Exists(exePath)) File.Delete(exePath); } catch { }
+                    File.Move(tmp, exePath);
+                    EnsureExecutable(exePath);
+                }
+                return exePath;
             }
-            catch { }
-            return null;
+            catch (Exception ex)
+            {
+                AppendOutput("[host] failed to unpack server binary: " + ex.Message);
+                return null;
+            }
+        }
+
+        static string ProjectLibraryDir()
+        {
+            // <project>/Library is derived data: gitignored and persists across sessions.
+            return Path.Combine(Path.GetDirectoryName(Application.dataPath), "Library");
+        }
+
+        static byte[] GunzipBytes(byte[] compressed)
+        {
+            using (var inMs = new MemoryStream(compressed))
+            using (var gz = new System.IO.Compression.GZipStream(inMs, System.IO.Compression.CompressionMode.Decompress))
+            using (var outMs = new MemoryStream())
+            {
+                gz.CopyTo(outMs);
+                return outMs.ToArray();
+            }
+        }
+
+        static string ShortHash(byte[] data)
+        {
+            using (var md5 = System.Security.Cryptography.MD5.Create())
+            {
+                var h = md5.ComputeHash(data);
+                var sb = new System.Text.StringBuilder(16);
+                for (int i = 0; i < 8; i++) sb.Append(h[i].ToString("x2"));
+                return sb.ToString();
+            }
         }
 
         // Locate this package's Editor folder via the window's own script asset,
@@ -1172,17 +1233,26 @@ namespace MakeGamesPlay.WebBuildHost.Editor
             return null;
         }
 
-        static string ServerBinaryFileName()
+        static string ServerBinaryStem()
         {
-            string os, arch, ext = "";
+            string os, arch;
             switch (Application.platform)
             {
-                case RuntimePlatform.WindowsEditor: os = "windows"; arch = "amd64"; ext = ".exe"; break;
-                case RuntimePlatform.OSXEditor:     os = "darwin";  arch = IsArm64() ? "arm64" : "amd64"; break;
-                case RuntimePlatform.LinuxEditor:   os = "linux";   arch = "amd64"; break;
-                default:                            os = "windows"; arch = "amd64"; ext = ".exe"; break;
+                case RuntimePlatform.OSXEditor:   os = "darwin"; arch = IsArm64() ? "arm64" : "amd64"; break;
+                case RuntimePlatform.LinuxEditor: os = "linux";  arch = "amd64"; break;
+                default:                          os = "windows"; arch = "amd64"; break;
             }
-            return "web-host-" + os + "-" + arch + ext;
+            return "web-host-" + os + "-" + arch;
+        }
+
+        static string ServerBinaryExt()
+        {
+            switch (Application.platform)
+            {
+                case RuntimePlatform.OSXEditor:
+                case RuntimePlatform.LinuxEditor: return "";
+                default:                          return ".exe";
+            }
         }
 
         static bool IsArm64()
@@ -1194,21 +1264,34 @@ namespace MakeGamesPlay.WebBuildHost.Editor
         static void EnsureExecutable(string path)
         {
 #if UNITY_EDITOR_OSX || UNITY_EDITOR_LINUX
+            RunQuiet("/bin/chmod", "+x \"" + path + "\"");
+#endif
+#if UNITY_EDITOR_OSX
+            // Cross-compiled Go binaries carry no code signature, which Apple Silicon
+            // refuses to run, and an extracted file can pick up a quarantine xattr.
+            // Strip quarantine and ad-hoc sign so it launches locally. Proper
+            // notarization remains a future step for wider distribution.
+            RunQuiet("/usr/bin/xattr", "-dr com.apple.quarantine \"" + path + "\"");
+            RunQuiet("/usr/bin/codesign", "--force --sign - \"" + path + "\"");
+#endif
+        }
+
+        static void RunQuiet(string fileName, string args)
+        {
             try
             {
                 var psi = new ProcessStartInfo
                 {
-                    FileName = "/bin/chmod",
-                    Arguments = "+x \"" + path + "\"",
+                    FileName = fileName,
+                    Arguments = args,
                     UseShellExecute = false,
                     CreateNoWindow = true,
                 };
                 var p = Process.Start(psi);
-                p?.WaitForExit(2000);
+                p?.WaitForExit(4000);
                 p?.Dispose();
             }
             catch { }
-#endif
         }
 
         static bool ProbeExecutable(string fileName, string args)

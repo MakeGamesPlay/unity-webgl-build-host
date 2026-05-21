@@ -113,7 +113,9 @@ Downloads and full instructions: https://github.com/cloudflare/cloudflared/relea
 
 ## Building the native server from source
 
-Prebuilt servers live in `Editor/HostBuild/Bin~/`. To rebuild them (Go 1.21 or newer):
+The servers are bundled as compressed `.gz.bytes` assets in `Editor/HostBuild/Bin/`; the
+editor unpacks the one it needs into a `Library` cache at runtime. To rebuild them (Go 1.21
+or newer):
 
 - Windows: `Editor/HostBuild/Server~/build.ps1` (run with `-ExecutionPolicy Bypass`)
 - macOS or Linux: `Editor/HostBuild/Server~/build.sh`

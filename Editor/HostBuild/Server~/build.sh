@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
-# Cross-compiles web-host for every supported Unity editor platform into
-# ../Bin~ (a tilde folder Unity ignores). Pure Go + CGO_ENABLED=0 means all
-# targets build from any one host.
-#
-# Release note: macOS binaries must be codesigned + notarized (or the editor
-# strips com.apple.quarantine) before shipping - that's a release step.
+# Cross-compiles web-host for every supported Unity editor platform and ships each
+# as a gzip-compressed ".gz.bytes" TextAsset in ../Bin. Bin is a normal asset folder
+# (not a tilde "Bin~"), so the binaries are included in a .unitypackage / Asset Store
+# export; the editor decompresses the one it needs into a Library cache at runtime.
+# Pure Go + CGO_ENABLED=0 means all targets build from any one host.
 set -euo pipefail
 cd "$(dirname "$0")"
-out="../Bin~"
+out="../Bin"
 mkdir -p "$out"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
 export CGO_ENABLED=0
 
 build() {
-  GOOS="$1" GOARCH="$2" go build -ldflags "-s -w" -trimpath -o "$out/web-host-$1-$2$3" .
-  echo "built $1/$2"
+  local os="$1" arch="$2" ext="$3"
+  GOOS="$os" GOARCH="$arch" go build -ldflags "-s -w" -trimpath -o "$tmp/web-host-$os-$arch$ext" .
+  gzip -c "$tmp/web-host-$os-$arch$ext" > "$out/web-host-$os-$arch.gz.bytes"
+  echo "packed $os/$arch"
 }
 
 build windows amd64 .exe

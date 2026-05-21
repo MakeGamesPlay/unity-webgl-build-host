@@ -26,6 +26,11 @@ const wsMaxFrame = 1 << 20 // 1 MiB - log lines never approach this
 // logHub is the process-wide registry of connected devices and their buffers.
 var logHub = newHub(5000)
 
+// verboseDevLog mirrors the --verbose flag. When false (the shipped default) the
+// per-device [dev …] lines stay out of the server log, since the editor's device
+// console already shows them. Set once in main before any connection is accepted.
+var verboseDevLog bool
+
 // ─── Device + hub model ────────────────────────────────────────────
 
 type logLine struct {
@@ -133,10 +138,14 @@ func (h *hub) handleMessage(d *device, data []byte) {
 		d.lastSeen = time.Now()
 		lbl := d.labelOrID()
 		d.mu.Unlock()
-		log.Printf("[dev %s] hello ua=%q gpu=%q %dx%d@%g", lbl, m.UA, m.GPU, m.W, m.H, m.DPR)
+		if verboseDevLog {
+			log.Printf("[dev %s] hello ua=%q gpu=%q %dx%d@%g", lbl, m.UA, m.GPU, m.W, m.H, m.DPR)
+		}
 	case "log":
 		d.addLine(m.Level, m.Msg, m.Ts, m.Frame)
-		log.Printf("[dev %s] %s %s", d.labelOrID(), strings.ToUpper(m.Level), m.Msg)
+		if verboseDevLog {
+			log.Printf("[dev %s] %s %s", d.labelOrID(), strings.ToUpper(m.Level), m.Msg)
+		}
 	case "ping":
 		d.touch()
 	}
@@ -210,7 +219,9 @@ func (h *hub) serveWS(w http.ResponseWriter, r *http.Request) {
 	d.lastSeen = time.Now()
 	lbl := d.labelOrID()
 	d.mu.Unlock()
-	log.Printf("[dev %s] connected (%s)", lbl, ip)
+	if verboseDevLog {
+		log.Printf("[dev %s] connected (%s)", lbl, ip)
+	}
 
 	defer func() {
 		d.mu.Lock()
@@ -223,7 +234,9 @@ func (h *hub) serveWS(w http.ResponseWriter, r *http.Request) {
 		d.lastSeen = time.Now()
 		lbl := d.labelOrID()
 		d.mu.Unlock()
-		log.Printf("[dev %s] disconnected", lbl)
+		if verboseDevLog {
+			log.Printf("[dev %s] disconnected", lbl)
+		}
 	}()
 
 	var frag []byte

@@ -2,11 +2,11 @@
 // builds. It exists because `python -m http.server` (and most generic static
 // servers) get two things wrong that make Unity WebGL slow or broken:
 //
-//   1. They don't send Content-Encoding for Unity's pre-compressed .br / .gz
-//      build files, so the browser can't decompress natively and Unity falls
-//      back to a slow JavaScript decompressor (tens of seconds on mobile).
-//   2. They don't send Content-Type: application/wasm, so the browser can't
-//      use streaming WebAssembly compilation.
+//  1. They don't send Content-Encoding for Unity's pre-compressed .br / .gz
+//     build files, so the browser can't decompress natively and Unity falls
+//     back to a slow JavaScript decompressor (tens of seconds on mobile).
+//  2. They don't send Content-Type: application/wasm, so the browser can't
+//     use streaming WebAssembly compilation.
 //
 // It also sets COOP/COEP so SharedArrayBuffer (threaded) builds work.
 //
@@ -41,6 +41,7 @@ func main() {
 	cloudflaredPath := flag.String("cloudflared-path", "", "explicit path to the cloudflared binary")
 	statusFile := flag.String("status-file", "", "path to write the JSON status file the editor polls")
 	logFile := flag.String("log-file", "", "tee all output to this file (for detached launches)")
+	verbose := flag.Bool("verbose", false, "also log every device console line to the server log (the editor's device console always shows them)")
 	flag.Parse()
 
 	// Detached launches have no console, so tee output to the log file the
@@ -50,6 +51,7 @@ func main() {
 			log.SetOutput(f)
 		}
 	}
+	verboseDevLog = *verbose
 	if *lan {
 		*host = "0.0.0.0"
 	}
