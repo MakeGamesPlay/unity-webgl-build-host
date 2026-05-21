@@ -10,6 +10,9 @@ desktop.ini
 .vs/
 .vscode/
 
+# Release artifacts — attach these to the GitHub Release, don't track them.
+*.unitypackage
+
 # Go test artifacts (the shipped servers in Editor/HostBuild/Bin/ ARE committed)
 Editor/HostBuild/Server~/*.test
 Editor/HostBuild/Server~/*.test.exe
