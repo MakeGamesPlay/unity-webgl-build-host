@@ -77,6 +77,16 @@ func controlHandler() http.Handler {
 		_, _ = w.Write([]byte("ok"))
 	})
 
+	// Clear one device's buffered lines AND reset its sequence counter (the
+	// editor's Clear button). This actually frees the server-side ring buffer
+	// (not just the editor view) and resets the seq to 0, so the editor can
+	// resync its cursor to 0 and keep receiving new lines from a clean slate.
+	mux.HandleFunc(webPrefix+"clear", func(w http.ResponseWriter, r *http.Request) {
+		logHub.clearDevice(r.URL.Query().Get("id"))
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("ok"))
+	})
+
 	return mux
 }
 
@@ -95,6 +105,21 @@ func (h *hub) lookup(id string) *device {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.devices[id]
+}
+
+// clearDevice empties a device's buffered lines and resets its sequence to 0.
+// The device stays registered (a live socket keeps streaming), so new lines
+// resume from seq 1 and the editor — which resets its cursor to 0 on Clear —
+// picks them up cleanly. No-op if the id is unknown.
+func (h *hub) clearDevice(id string) {
+	d := h.lookup(id)
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	d.lines = nil
+	d.nextSeq = 0
+	d.mu.Unlock()
 }
 
 func (h *hub) snapshot() []deviceInfo {

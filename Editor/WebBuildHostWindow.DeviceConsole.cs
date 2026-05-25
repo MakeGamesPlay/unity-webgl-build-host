@@ -186,8 +186,26 @@ namespace MakeGamesPlay.WebBuildHost.Editor
                 deviceTabs.Remove(id);
             }
             closedTabs.Add(id);
+            SaveClosedTabs(); // persist so it stays closed across domain reloads (compiles)
             if (selectedTabId == id) SelectTab(ServerTabId);
         }
+
+        // closedTabs lives in SessionState (not a plain field) so closing a tab
+        // sticks across domain reloads — otherwise every recompile rebuilt the
+        // window with an empty set and PollDevices re-added the old (still
+        // server-known) sessions. SessionState clears on full editor restart,
+        // which is the right scope: a fresh editor session can show them again.
+        const string ClosedTabsKey = "MakeGamesPlay.WebBuildHost.ClosedTabs";
+
+        void LoadClosedTabs()
+        {
+            var saved = SessionState.GetString(ClosedTabsKey, "");
+            if (string.IsNullOrEmpty(saved)) return;
+            foreach (var id in saved.Split('\n'))
+                if (!string.IsNullOrEmpty(id)) closedTabs.Add(id);
+        }
+
+        void SaveClosedTabs() => SessionState.SetString(ClosedTabsKey, string.Join("\n", closedTabs));
 
         // ── Polling (called from OnEditorUpdate, ~1 Hz) ──
 
@@ -380,7 +398,16 @@ namespace MakeGamesPlay.WebBuildHost.Editor
             }
             else if (deviceTabs.TryGetValue(selectedTabId, out var d))
             {
-                d.lines.Clear(); // keep cursor: only newer lines reappear
+                // Clear the SERVER ring buffer too (not just the editor view),
+                // then resync the cursor to 0 so new lines flow from a clean
+                // slate. Without the server clear the storage kept growing; and
+                // resetting the cursor to match the server's reset seq removes
+                // any chance of a stale cursor stalling new lines.
+                if (controlPort > 0)
+                    TryHttpGet(ControlBase() + "clear?id=" + Uri.EscapeDataString(d.id), ControlTimeoutMs, out _);
+                d.lines.Clear();
+                d.cursor = 0;
+                d.everFetched = false;
             }
             logSig = null;
             UpdateLogView();
@@ -406,6 +433,56 @@ namespace MakeGamesPlay.WebBuildHost.Editor
         }
 
         static string RowCopyText(LogRow r) => (string.IsNullOrEmpty(r.time) ? "" : r.time + "  ") + r.text;
+
+        // Save the current tab's full log to a text file (button sits next to
+        // Copy). Device tabs save the full buffered log with a metadata header;
+        // the Server tab saves the host/server output.
+        void SaveSelectedTab()
+        {
+            string defaultName, content;
+            if (selectedTabId == ServerTabId)
+            {
+                var sb = new StringBuilder();
+                lock (outputLines)
+                    foreach (var l in outputLines) sb.AppendLine(l);
+                if (!string.IsNullOrEmpty(serveLogTail)) sb.AppendLine(serveLogTail);
+                defaultName = "webhost-server-log.txt";
+                content = sb.ToString();
+            }
+            else if (deviceTabs.TryGetValue(selectedTabId, out var d))
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine("# Web device log — " + d.label);
+                if (!string.IsNullOrEmpty(d.ua)) sb.AppendLine("# UA: " + d.ua);
+                sb.AppendLine("# Screen: " + d.w + "×" + d.h + " @" + d.dpr + "x");
+                if (!string.IsNullOrEmpty(d.ip)) sb.AppendLine("# IP: " + d.ip);
+                sb.AppendLine();
+                foreach (var ln in d.lines)
+                    sb.AppendLine(FormatTs(ln.ts) + "  " + (ln.level ?? "log").ToUpperInvariant() + "  " + ln.msg);
+                defaultName = SanitizeFileName(d.label) + "-log.txt";
+                content = sb.ToString();
+            }
+            else return;
+
+            var path = EditorUtility.SaveFilePanel("Save logs", "", defaultName, "txt");
+            if (string.IsNullOrEmpty(path)) return;
+            try
+            {
+                File.WriteAllText(path, content);
+                EditorUtility.RevealInFinder(path);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("[WebBuildHost] Save logs failed: " + e.Message);
+            }
+        }
+
+        static string SanitizeFileName(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "device";
+            foreach (var ch in Path.GetInvalidFileNameChars()) s = s.Replace(ch, '-');
+            return s.Replace(' ', '-').Replace('·', '-');
+        }
 
         // ── Device actions (3c) ──
 

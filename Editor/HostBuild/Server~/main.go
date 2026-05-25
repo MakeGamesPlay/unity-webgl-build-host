@@ -42,6 +42,7 @@ func main() {
 	statusFile := flag.String("status-file", "", "path to write the JSON status file the editor polls")
 	logFile := flag.String("log-file", "", "tee all output to this file (for detached launches)")
 	verbose := flag.Bool("verbose", false, "also log every device console line to the server log (the editor's device console always shows them)")
+	noCache := flag.Bool("no-cache", false, "send Cache-Control: no-store on every served file (development builds — a plain reload always picks up a fresh build, no hard cache-clear needed; release builds omit this so normal browser caching applies)")
 	flag.Parse()
 
 	// Detached launches have no console, so tee output to the log file the
@@ -65,7 +66,10 @@ func main() {
 		log.Fatalf("[serve] root is not a directory: %s", absRoot)
 	}
 
-	handler := newFileHandler(absRoot)
+	handler := newFileHandler(absRoot, *noCache)
+	if *noCache {
+		log.Printf("[serve] no-cache mode: Cache-Control: no-store on all files (development build)")
+	}
 	log.Printf("[serve] serving %s", absRoot)
 	lanIP := primaryLANIP()
 
@@ -183,7 +187,7 @@ func listenFromPort(host string, start, attempts int) (net.Listener, int, error)
 	return nil, 0, lastErr
 }
 
-func newFileHandler(root string) http.Handler {
+func newFileHandler(root string, noCache bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Reserved /__webhost/* namespace (devlog shim + log WebSocket).
 		if handleWebHost(w, r) {
@@ -231,6 +235,15 @@ func newFileHandler(root string) http.Handler {
 		}
 
 		applyHeaders(w.Header(), full)
+		// Development builds: forbid caching of every served file so a plain
+		// reload always fetches the fresh build. Unity doesn't content-hash its
+		// WebGL output (.data/.wasm/.framework.js keep stable names) nor the
+		// template files, so without this the browser heuristic-caches them and
+		// serves stale assets after a rebuild. Release builds skip this and let
+		// ServeContent's Last-Modified revalidation drive normal caching.
+		if noCache {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		// ServeContent gives us Range requests, If-Modified-Since and a correct
 		// Content-Length for free, and respects the Content-Type we already set.
 		http.ServeContent(w, r, "", fi.ModTime(), f)

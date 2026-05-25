@@ -379,6 +379,10 @@ namespace MakeGamesPlay.WebBuildHost.Editor
             var copyLog = new Button(CopySelectedRows) { text = "Copy" };
             copyLog.style.width = 60;
             logHeader.Add(copyLog);
+            var saveLog = new Button(SaveSelectedTab) { text = "Save" };
+            saveLog.style.width = 60;
+            saveLog.tooltip = "Save this tab's full log to a text file";
+            logHeader.Add(saveLog);
             var clearLog = new Button(ClearSelectedTab) { text = "Clear" };
             clearLog.style.width = 60;
             logHeader.Add(clearLog);
@@ -387,6 +391,11 @@ namespace MakeGamesPlay.WebBuildHost.Editor
             var logHint = Wrapped("[host] = window actions; server output is tailed below (startup errors, request logs, tunnel handshake).");
             logHint.style.opacity = 0.7f;
             root.Add(logHint);
+
+            // Restore the set of closed device tabs (persisted in SessionState)
+            // so closing a tab survives domain reloads / recompiles instead of
+            // the old session re-appearing on the next poll.
+            LoadClosedTabs();
 
             // Tab strip: pinned "Server" tab + one tab per connected device.
             root.Add(BuildTabStrip());
@@ -994,13 +1003,23 @@ namespace MakeGamesPlay.WebBuildHost.Editor
             try { if (File.Exists(logPath)) File.Delete(logPath); } catch { }
             serveLogTail = "";
 
+            // Development builds are served with caching disabled so a plain
+            // device reload always picks up a fresh build — Unity doesn't
+            // content-hash its WebGL output or the template JS, so otherwise the
+            // browser heuristic-caches them and needs a manual hard cache-clear.
+            // Release builds omit the flag and keep normal caching for speed.
+            var devBuild = EditorUserBuildSettings.development;
             var args = "--root \"" + buildFolder + "\"" +
                        " --port " + boundPort +
                        (useLan ? " --lan" : "") +
                        (effectiveTunnel ? "" : " --no-tunnel") +
+                       (devBuild ? " --no-cache" : "") +
                        " --status-file \"" + statusPath + "\"" +
                        " --log-file \"" + logPath + "\"";
             AppendOutput("[host] launching: " + binPath + " " + args);
+            AppendOutput(devBuild
+                ? "[host] Development Build is ON - serving with no-cache (reload picks up fresh builds; no shred needed)."
+                : "[host] Development Build is OFF - serving with normal browser caching (release mode).");
 
             var psi = new ProcessStartInfo
             {
