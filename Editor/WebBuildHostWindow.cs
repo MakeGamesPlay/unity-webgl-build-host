@@ -42,10 +42,10 @@ namespace MakeGamesPlay.WebBuildHost.Editor
         const string LastLanPrefKey    = "WebBuildHost.LastLan";
         const int    DefaultPort       = 8000;
 
-        // ─── Branding / CTA links (TODO: set these to the real published URLs) ───
-        const string GitHubUrl     = "https://github.com/MakeGamesPlay/web-build-host";
-        const string AssetStoreUrl = "https://assetstore.unity.com/publishers/MakeGamesPlay";
-        const string WebARAssetUrl = "https://assetstore.unity.com/packages/tools/integration/webar-image-tracker";
+        // ─── Branding / CTA links ───
+        const string GitHubUrl     = "https://github.com/MakeGamesPlay/unity-webgl-build-host";
+        const string AssetStoreUrl = "https://assetstore.unity.com/packages/slug/384084";
+        const string WebARAssetUrl = "https://assetstore.unity.com/packages/slug/384314";
         const int    MaxOutputLines    = 200;
         const double StatusPollIntervalSec = 1.0;
         const int    HealthProbeTimeoutMs  = 250;
@@ -68,6 +68,7 @@ namespace MakeGamesPlay.WebBuildHost.Editor
             public string lanUrl;
             public string lanHttpsUrl;
             public string tunnelUrl;
+            public bool tunnelOk;
         }
 
         // ─── Config (mirrors EditorPrefs) ──────────────────────────
@@ -87,6 +88,7 @@ namespace MakeGamesPlay.WebBuildHost.Editor
         string lanUrl;
         string lanHttpsUrl;
         string publicUrl;
+        bool tunnelOffline;   // a tunnel was up but the server reports it dead (slept / network change)
         bool localServerAlive;
         bool? cloudflaredAvailable;
 
@@ -619,8 +621,9 @@ namespace MakeGamesPlay.WebBuildHost.Editor
                 if (!string.IsNullOrEmpty(lan)) { lanRow.Set("LAN", lan); lanRow.Show(true); }
                 else lanRow.Show(false);
 
-                bool tunnelPending = useTunnel && cloudflaredAvailable == true && string.IsNullOrEmpty(publicUrl);
+                bool tunnelPending = useTunnel && cloudflaredAvailable == true && string.IsNullOrEmpty(publicUrl) && !tunnelOffline;
                 if (!string.IsNullOrEmpty(publicUrl)) { publicRow.Set("Public", publicUrl); publicRow.Show(true); }
+                else if (tunnelOffline) { publicRow.Set("Public", null, "(offline — Stop & Start to reconnect)"); publicRow.Show(true); }
                 else if (tunnelPending) { publicRow.Set("Public", null, "(resolving…)"); publicRow.Show(true); }
                 else publicRow.Show(false);
             }
@@ -636,6 +639,8 @@ namespace MakeGamesPlay.WebBuildHost.Editor
                 return "Process alive but server not responding - device reload will fail";
             if (IsRunning && !string.IsNullOrEmpty(publicUrl))
                 return "Running (tunnel ready)";
+            if (IsRunning && tunnelOffline)
+                return "Running - tunnel offline (slept / network change). Stop & Start to reconnect.";
             if (IsRunning && useTunnel && cloudflaredAvailable == false)
                 return "Running (cloudflared not installed - localhost/LAN only)";
             if (IsRunning && useTunnel)
@@ -926,7 +931,9 @@ namespace MakeGamesPlay.WebBuildHost.Editor
                 localHttpsUrl  = s.localHttpsUrl;
                 lanUrl         = s.lanUrl;
                 lanHttpsUrl    = s.lanHttpsUrl;
-                publicUrl      = string.IsNullOrEmpty(s.tunnelUrl) ? null : s.tunnelUrl;
+                bool haveTunnel = !string.IsNullOrEmpty(s.tunnelUrl);
+                publicUrl      = (haveTunnel && s.tunnelOk) ? s.tunnelUrl : null;
+                tunnelOffline  = haveTunnel && !s.tunnelOk;   // came up, now reported dead
                 localServerAlive = boundPort > 0 && ProbeLocalServer(boundPort);
                 if (announce && firstSeen)
                 {
@@ -950,6 +957,7 @@ namespace MakeGamesPlay.WebBuildHost.Editor
                 lanUrl = null;
                 lanHttpsUrl = null;
                 publicUrl = null;
+                tunnelOffline = false;
                 localServerAlive = false;
             }
         }

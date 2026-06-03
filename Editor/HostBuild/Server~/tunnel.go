@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var tunnelURLRe = regexp.MustCompile(`https://[a-z0-9-]+\.trycloudflare\.com`)
@@ -56,10 +58,14 @@ func startTunnel(exe string, httpPort int) {
 	}
 	stat.setCloudflaredPid(cmd.Process.Pid)
 
+	// Closed when cloudflared exits, so the health monitor stops.
+	done := make(chan struct{})
 	go func() {
 		_ = cmd.Wait()
 		_ = pw.Close()
-		log.Printf("[tunnel] cloudflared exited")
+		stat.setTunnelDown() // process gone → the tunnel is dead
+		close(done)
+		log.Printf("[tunnel] cloudflared exited - tunnel marked offline")
 	}()
 
 	go func() {
@@ -73,6 +79,9 @@ func startTunnel(exe string, httpPort int) {
 					found = true
 					log.Printf("[tunnel] public URL: %s", m)
 					stat.setTunnel(m, cmd.Process.Pid)
+					// Watch for a silently-dead tunnel (cloudflared can keep
+					// running after the machine sleeps while the connection is gone).
+					go monitorTunnel(m, done)
 					continue
 				}
 			}
@@ -89,4 +98,50 @@ func startTunnel(exe string, httpPort int) {
 			}
 		}
 	}()
+}
+
+// monitorTunnel periodically checks that the public URL still reaches the local
+// origin. cloudflared frequently KEEPS RUNNING after the machine sleeps while its
+// quick-tunnel connection is permanently dead, so a live PID alone isn't enough -
+// we probe end-to-end and mark the tunnel offline after two consecutive failures
+// (the editor then shows it down instead of a stale "active"). Quick tunnels don't
+// recover the same URL, so we stop once it's confirmed dead; Stop & Start reconnects.
+func monitorTunnel(url string, done <-chan struct{}) {
+	t := time.NewTicker(15 * time.Second)
+	defer t.Stop()
+	fails := 0
+	for {
+		select {
+		case <-done:
+			return // cloudflared exited; the Wait goroutine already marked it down
+		case <-t.C:
+			if tunnelAlive(url) {
+				fails = 0
+				continue
+			}
+			fails++
+			log.Printf("[tunnel] health probe failed (%d/2): %s", fails, url)
+			if fails >= 2 {
+				log.Printf("[tunnel] tunnel unreachable (machine slept / network changed?) - marking offline. Stop & Start to reconnect.")
+				stat.setTunnelDown()
+				return
+			}
+		}
+	}
+}
+
+// tunnelAlive reports whether an HTTP request to the public URL gets ANY response
+// (even an error status) - proof it reached the local origin through the tunnel.
+// A transport error / timeout means the tunnel is down.
+func tunnelAlive(url string) bool {
+	client := &http.Client{
+		Timeout:       10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	resp, err := client.Get(url + "/__webhost/healthz")
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	return true
 }

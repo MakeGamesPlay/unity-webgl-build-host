@@ -35,6 +35,14 @@ func handleWebHost(w http.ResponseWriter, r *http.Request) bool {
 	case webPrefix + "logs":
 		logHub.serveWS(w, r)
 		return true
+	case webPrefix + "healthz":
+		// Reachable over the tunnel/LAN: the tunnel monitor probes this to tell
+		// a live-but-dead quick tunnel (common after the machine sleeps) from a
+		// healthy one. Any response proves the request reached this origin.
+		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write([]byte("ok"))
+		return true
 	}
 	http.NotFound(w, r)
 	return true

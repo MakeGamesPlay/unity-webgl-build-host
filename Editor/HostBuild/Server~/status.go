@@ -20,6 +20,7 @@ type status struct {
 	LanURL         string `json:"lanUrl"`
 	LanHTTPSURL    string `json:"lanHttpsUrl"`
 	TunnelURL      string `json:"tunnelUrl"`
+	TunnelOK       bool   `json:"tunnelOk"` // false once the tunnel is confirmed dead (process gone or probe failed)
 }
 
 type statusState struct {
@@ -43,9 +44,24 @@ func (s *statusState) init(path string, d status) {
 func (s *statusState) setTunnel(url string, pid int) {
 	s.mu.Lock()
 	s.data.TunnelURL = url
+	s.data.TunnelOK = url != ""
 	if pid != 0 {
 		s.data.CloudflaredPid = pid
 	}
+	s.mu.Unlock()
+	s.write()
+}
+
+// setTunnelDown marks the tunnel unhealthy (cloudflared exited, or the health
+// probe failed) while keeping the last URL, so the editor shows it as offline
+// instead of a stale "active".
+func (s *statusState) setTunnelDown() {
+	s.mu.Lock()
+	if !s.data.TunnelOK && s.data.TunnelURL == "" {
+		s.mu.Unlock()
+		return // never came up; nothing to mark
+	}
+	s.data.TunnelOK = false
 	s.mu.Unlock()
 	s.write()
 }

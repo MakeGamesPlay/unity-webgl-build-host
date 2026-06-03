@@ -139,4 +139,4 @@ MIT. See [LICENSE.md](LICENSE.md).
 ---
 
 Made by [MakeGamesPlay](https://github.com/MakeGamesPlay). Building AR for the web? Take a
-look at WebAR Image Tracker on the [Unity Asset Store](https://assetstore.unity.com/publishers/MakeGamesPlay).
+look at WebAR Image Tracker on the [Unity Asset Store](https://assetstore.unity.com/packages/slug/384314) ([docs](https://github.com/MakeGamesPlay/webar-image-tracker-for-unity)).
