@@ -20,3 +20,4 @@ Editor/HostBuild/Server~/*.test.exe
 
 # NOTE: do NOT add a "*~" rule here — it would match the Server~/ source folder.
 # NOTE: Unity .meta files are intentionally committed (required for UPM packages).
+/Documentation~

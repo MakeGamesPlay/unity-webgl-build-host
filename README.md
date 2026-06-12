@@ -9,9 +9,9 @@ other runtime required.
 ![Platforms](https://img.shields.io/badge/editor-Windows%20%7C%20macOS%20%7C%20Linux-informational)
 [![Release](https://img.shields.io/github/v/release/MakeGamesPlay/unity-webgl-build-host?include_prereleases&sort=semver)](https://github.com/MakeGamesPlay/unity-webgl-build-host/releases)
 
-<!-- TODO (highest-impact): add a screenshot of the window (config + QR + device console)
-     and ideally a short GIF of a phone connecting and logs streaming, then reference it
-     here, e.g.  ![WebGL Build Host](Documentation~/screenshot.png) -->
+![The WebGL Build Host window: server controls, QR code, and the live device console](.github/webgl-build-host-window.png)
+
+▶️ **[Watch the trailer](https://youtu.be/9DcreH6fuZA)**
 
 ## Overview
 
