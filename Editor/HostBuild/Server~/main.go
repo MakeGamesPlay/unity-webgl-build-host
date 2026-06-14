@@ -28,6 +28,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -40,6 +41,7 @@ func main() {
 	noTunnel := flag.Bool("no-tunnel", false, "do not start a Cloudflare quick tunnel")
 	cloudflaredPath := flag.String("cloudflared-path", "", "explicit path to the cloudflared binary")
 	statusFile := flag.String("status-file", "", "path to write the JSON status file the editor polls")
+	heartbeatFile := flag.String("heartbeat-file", "", "path to the editor heartbeat file; the server self-terminates if it goes stale (the editor has been closed) so a forgotten host doesn't run forever")
 	logFile := flag.String("log-file", "", "tee all output to this file (for detached launches)")
 	verbose := flag.Bool("verbose", false, "also log every device console line to the server log (the editor's device console always shows them)")
 	noCache := flag.Bool("no-cache", false, "send Cache-Control: no-store on every served file (development builds — a plain reload always picks up a fresh build, no hard cache-clear needed; release builds omit this so normal browser caching applies)")
@@ -163,8 +165,41 @@ func main() {
 		}
 	}
 
+	// Self-terminate if the editor stops touching the heartbeat file (Unity
+	// closed). The detached server otherwise outlives the editor indefinitely.
+	if *heartbeatFile != "" {
+		go watchHeartbeat(*heartbeatFile, 10*time.Minute)
+	}
+
 	log.Printf("[serve] Ctrl-C to stop")
 	select {} // block forever; the listeners run in their own goroutines
+}
+
+// watchHeartbeat self-terminates the server when the editor heartbeat file goes
+// stale. The editor touches it every ~30s while Unity is open; once it stops for
+// longer than maxIdle the editor is gone, so we stop serving (and kill the
+// tunnel) rather than run forever. A full maxIdle grace from startup covers the
+// brief gap before the first heartbeat lands.
+func watchHeartbeat(path string, maxIdle time.Duration) {
+	last := time.Now()
+	t := time.NewTicker(30 * time.Second)
+	defer t.Stop()
+	for range t.C {
+		if fi, err := os.Stat(path); err == nil && fi.ModTime().After(last) {
+			last = fi.ModTime()
+		}
+		if time.Since(last) <= maxIdle {
+			continue
+		}
+		log.Printf("[serve] editor heartbeat stale for >%v - Unity appears closed; shutting down.", maxIdle)
+		if pid := stat.cloudflaredPid(); pid != 0 {
+			if p, err := os.FindProcess(pid); err == nil {
+				_ = p.Kill()
+				log.Printf("[serve] stopped cloudflared (pid %d)", pid)
+			}
+		}
+		os.Exit(0)
+	}
 }
 
 // listenFromPort tries start, start+1, ... until one binds or attempts run

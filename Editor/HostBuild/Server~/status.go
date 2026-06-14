@@ -73,6 +73,12 @@ func (s *statusState) setCloudflaredPid(pid int) {
 	s.write()
 }
 
+func (s *statusState) cloudflaredPid() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.data.CloudflaredPid
+}
+
 func (s *statusState) write() {
 	s.mu.Lock()
 	path := s.path

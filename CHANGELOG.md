@@ -1,6 +1,24 @@
 # Changelog
 
-## Unreleased
+## 1.3.0
+- **Self-terminating server.** The detached host now shuts itself down if the
+  editor has been closed for ~10 minutes - it watches a heartbeat file the editor
+  touches every 30s, and on a stale heartbeat it stops serving and kills the
+  Cloudflare tunnel. A forgotten host no longer runs indefinitely. Closing only
+  the window keeps it running while Unity is open (the heartbeat tracks the editor,
+  not the window).
+- **Dockable window.** The content (build, status, logs) scrolls above a pinned
+  footer, and the logs section is sized to the viewport - so in a short or docked
+  window you scroll down to the logs and still get the log header plus a
+  full-height log list in its own scroll below it.
+- **Footer version + build date.** The footer now shows the package version and
+  this build's date, so it's easy to report which build you're running.
+- **Post-build prompt.** After a WebGL build, if no Build Host window is open, a
+  dialog offers to open one and serve the fresh build. Skipped in batch mode (CI);
+  a "Don't ask again" choice is remembered per project.
+- Clearer cloudflared help when it isn't installed: the copy button is now
+  labelled "Copy Command for Terminal" and the help text says to run the command
+  in a terminal, so it's obvious what to do with the copied text.
 - UPM manifest compliance: added `unityRelease` and the author URL; author name
   matches the Asset Store publisher.
 

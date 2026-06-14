@@ -143,7 +143,7 @@ namespace MakeGamesPlay.WebBuildHost.Editor
         static void ShowMenuItem()
         {
             var win = GetWindow<WebBuildHostWindow>(utility: false, title: "WebGL Build Host", focus: true);
-            win.minSize = new Vector2(540, 380);
+            win.minSize = new Vector2(540, 200);
             win.Show();
             if (!win.IsRunning && string.IsNullOrEmpty(win.buildFolder))
             {
@@ -211,11 +211,21 @@ namespace MakeGamesPlay.WebBuildHost.Editor
 
         void CreateGUI()
         {
-            var root = rootVisualElement;
-            root.style.paddingLeft = 8;
-            root.style.paddingRight = 8;
-            root.style.paddingTop = 6;
-            root.style.paddingBottom = 6;
+            var window = rootVisualElement;
+            window.style.paddingLeft = 8;
+            window.style.paddingRight = 8;
+            window.style.paddingTop = 6;
+            window.style.paddingBottom = 6;
+
+            // Window = one content scroll (build + status + logs) above a pinned
+            // footer. The logs section is sized to the content viewport height (set
+            // in the GeometryChangedEvent at the end of this method), so scrolling
+            // down brings the logs header to the top with the log list filling the
+            // rest of the viewport in its own scroll - usable even in a short window.
+            var contentScroll = new ScrollView(ScrollViewMode.Vertical);
+            contentScroll.style.flexGrow = 1;
+            window.Add(contentScroll);
+            VisualElement root = contentScroll;
 
             root.Add(Bold("Host WebGL Build"));
             var desc = Wrapped(
@@ -277,8 +287,9 @@ namespace MakeGamesPlay.WebBuildHost.Editor
             cloudflaredHelp.style.display = DisplayStyle.None;
             cloudflaredHelp.style.marginTop = 2;
             cloudflaredHelp.Add(new HelpBox(
-                "The public link needs cloudflared, which isn't installed. The build still " +
-                "works on localhost and your local network without it.", HelpBoxMessageType.Info));
+                "The public link needs cloudflared, which isn't installed. Copy the command " +
+                "below and run it in a terminal to install it. The build still works on " +
+                "localhost and your local network without it.", HelpBoxMessageType.Info));
             var cfBtns = Row();
             cfBtns.style.marginTop = 2;
             cfBtns.Add(new Button(() =>
@@ -286,7 +297,7 @@ namespace MakeGamesPlay.WebBuildHost.Editor
                 var cmd = CloudflaredInstallCommand();
                 EditorGUIUtility.systemCopyBuffer = cmd;
                 AppendOutput("[host] Copied to clipboard: " + cmd);
-            }) { text = "Copy install command" });
+            }) { text = "Copy Command for Terminal" });
             cfBtns.Add(new Button(() => Application.OpenURL("https://github.com/cloudflare/cloudflared/releases"))
                 { text = "Download page" });
             cfBtns.Add(new Button(() => { cloudflaredAvailable = ProbeCloudflared(); UpdateUI(); })
@@ -362,6 +373,15 @@ namespace MakeGamesPlay.WebBuildHost.Editor
             shareRow.Add(detailsCol);
             statusCard.Add(shareRow);
             root.Add(statusCard);
+
+            // Logs section: a defined-height block inside the content scroll. Its
+            // height is set to the content viewport (window minus footer) at the end
+            // of this method, so the log header sits at the top and the log list
+            // below it fills the remaining space and scrolls on its own.
+            var logSection = new VisualElement();
+            logSection.style.flexShrink = 0;
+            root.Add(logSection);   // inside the content scroll, after build + status
+            root = logSection;
 
             // ── Log ──
             var logHeader = Row();
@@ -548,6 +568,9 @@ namespace MakeGamesPlay.WebBuildHost.Editor
             var brand = new Label("WebGL Build Host");
             brand.style.fontSize = 11; brand.style.color = LogMuted; brand.style.marginRight = 8;
             footer.Add(brand);
+            var ver = new Label(VersionStamp());
+            ver.style.fontSize = 11; ver.style.color = LogMuted; ver.style.marginRight = 8;
+            footer.Add(ver);
             footer.Add(Link("GitHub", GitHubUrl));
             footer.Add(FooterSep());
             footer.Add(Link("Asset Store", AssetStoreUrl));
@@ -556,7 +579,17 @@ namespace MakeGamesPlay.WebBuildHost.Editor
             promo.style.fontSize = 11; promo.style.color = LogMuted;
             footer.Add(promo);
             footer.Add(Link("Try WebAR Image Tracker →", WebARAssetUrl));
-            root.Add(footer);
+            window.Add(footer);
+
+            // Size the logs section to the content viewport (window minus footer) so
+            // its list fills the space below the log header and scrolls on its own.
+            // Re-runs on every resize; the guard prevents a layout feedback loop.
+            contentScroll.RegisterCallback<GeometryChangedEvent>(_ =>
+            {
+                float vp = contentScroll.contentViewport.resolvedStyle.height;
+                if (vp > 1f && Mathf.Abs(logSection.resolvedStyle.height - vp) > 0.5f)
+                    logSection.style.height = vp;
+            });
 
             UpdateUI();
         }
@@ -871,7 +904,7 @@ namespace MakeGamesPlay.WebBuildHost.Editor
 
         bool IsRunning => serverPid != 0;
 
-        static string StatusFilePath()
+        internal static string StatusFilePath()
         {
             uint hash = (uint)(Application.dataPath ?? "web").GetHashCode();
             return Path.Combine(Path.GetTempPath(), "web-host-" + hash.ToString("x8") + ".json");
@@ -881,6 +914,57 @@ namespace MakeGamesPlay.WebBuildHost.Editor
         {
             uint hash = (uint)(Application.dataPath ?? "web").GetHashCode();
             return Path.Combine(Path.GetTempPath(), "web-host-" + hash.ToString("x8") + ".log");
+        }
+
+        // The editor touches this file every ~30s while Unity is open; the detached
+        // server self-terminates if it goes stale (see WebBuildHostHeartbeat).
+        internal static string HeartbeatFilePath()
+        {
+            uint hash = (uint)(Application.dataPath ?? "web").GetHashCode();
+            return Path.Combine(Path.GetTempPath(), "web-host-" + hash.ToString("x8") + ".heartbeat");
+        }
+
+        // Footer stamp: package version + this editor assembly's build (compile)
+        // date. Best-effort; falls back to the product name if neither resolves.
+        static string VersionStamp()
+        {
+            string v = ReadPackageVersion();
+            string d = AssemblyBuildDate();
+            string s = v != null ? "v" + v : "";
+            if (d != null) s = (s.Length > 0 ? s + " · " : "") + d;
+            return s.Length > 0 ? s : "WebGL Build Host";
+        }
+
+        static string ReadPackageVersion()
+        {
+            try
+            {
+                foreach (string g in AssetDatabase.FindAssets("t:MonoScript WebBuildHostWindow"))
+                {
+                    string sp = AssetDatabase.GUIDToAssetPath(g);
+                    if (!sp.EndsWith("/WebBuildHostWindow.cs")) continue;
+                    string root = Path.GetDirectoryName(Path.GetDirectoryName(sp)); // up from Editor/ to package root
+                    string pj = Path.Combine(root, "package.json");
+                    if (!File.Exists(pj)) return null;
+                    var m = System.Text.RegularExpressions.Regex.Match(
+                        File.ReadAllText(pj), "\"version\"\\s*:\\s*\"([^\"]+)\"");
+                    return m.Success ? m.Groups[1].Value : null;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        static string AssemblyBuildDate()
+        {
+            try
+            {
+                string loc = typeof(WebBuildHostWindow).Assembly.Location;
+                if (!string.IsNullOrEmpty(loc) && File.Exists(loc))
+                    return File.GetLastWriteTime(loc).ToString("yyyy-MM-dd");
+            }
+            catch { }
+            return null;
         }
 
         static bool TryReadStatus(out HostStatus status)
@@ -1010,6 +1094,9 @@ namespace MakeGamesPlay.WebBuildHost.Editor
             try { if (File.Exists(statusPath)) File.Delete(statusPath); } catch { }
             try { if (File.Exists(logPath)) File.Delete(logPath); } catch { }
             serveLogTail = "";
+            // Seed a fresh heartbeat so the server starts inside the live window,
+            // even before the periodic editor heartbeat (WebBuildHostHeartbeat) fires.
+            try { File.WriteAllText(HeartbeatFilePath(), System.DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString()); } catch { }
 
             // Development builds are served with caching disabled so a plain
             // device reload always picks up a fresh build — Unity doesn't
@@ -1023,6 +1110,7 @@ namespace MakeGamesPlay.WebBuildHost.Editor
                        (effectiveTunnel ? "" : " --no-tunnel") +
                        (devBuild ? " --no-cache" : "") +
                        " --status-file \"" + statusPath + "\"" +
+                       " --heartbeat-file \"" + HeartbeatFilePath() + "\"" +
                        " --log-file \"" + logPath + "\"";
             AppendOutput("[host] launching: " + binPath + " " + args);
             AppendOutput(devBuild
