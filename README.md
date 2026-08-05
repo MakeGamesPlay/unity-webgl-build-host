@@ -49,6 +49,7 @@ Use it to:
 ## Requirements
 
 - Unity 2022.3 LTS or newer. Covers the Unity 6 "Web" platform (WebGL and WebGPU).
+  Tested on 6000.5.0f1, 6000.4.11f1, 6000.3.17f1, 6000.0.77f1 and 2022.3.62f3.
 - Editor OS: Windows, macOS (Apple Silicon or Intel), or Linux. A prebuilt server is
   included for each.
 - Optional: `cloudflared`, only if you want a public link. See below.
