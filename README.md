@@ -78,7 +78,10 @@ Append `#v1.0.0` to pin a specific version.
 git clone https://github.com/MakeGamesPlay/unity-webgl-build-host.git Packages/unity-webgl-build-host
 ```
 
-A drag-in `.unitypackage` will be added with the Asset Store release.
+### Unity Asset Store
+
+Also available as a drag-in `.unitypackage` on the
+[Unity Asset Store](https://assetstore.unity.com/packages/slug/384084).
 
 ## Quick start
 
